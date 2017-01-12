@@ -13,6 +13,7 @@ using System.Xml;
 using System.Threading.Tasks;
 using Microsoft.ProjectOxford.Vision;
 using Microsoft.ProjectOxford.Vision.Contract;
+using System.Runtime.Serialization;
 
 namespace WeChatBot.Utilities
 {
@@ -27,6 +28,8 @@ namespace WeChatBot.Utilities
         /// The set of visual features we want from the Vision API.
         /// </summary>
         private static readonly VisualFeature[] VisualFeatures = { VisualFeature.Description };
+
+        public static string textAPIToken { get; set; }
 
         /// <summary>
         /// 检验是否来自微信的签名
@@ -120,7 +123,7 @@ namespace WeChatBot.Utilities
                 writer.Write(message);
                 writer.Flush();
                 stream.Position = 0;
-                
+
                 T relayMsg = (T)ser.Deserialize(stream);
                 writer.Close();
                 return relayMsg;
@@ -160,11 +163,23 @@ namespace WeChatBot.Utilities
                         ImageMessage msg_image = Deserialize<ImageMessage>(msg);
                         // Azure Computer Version API to detect image caption
                         echo_content = await GetCaptionAsync(msg_image.PicUrl);
+                        // add chinese version and spanish version
+                        StringBuilder sb = new StringBuilder();
+                        sb.Append(echo_content);//.Append("\n"); // 解决微信换行问题
+                        
+                        try
+                        {
+                            //sb.Append(TranslateMethod(textAPIToken, echo_content, "zh-CHS")).Append("\\n");
+                            //sb.Append(TranslateMethod(textAPIToken, echo_content, "es"));
+                        }
+                        catch(Exception e)
+                        { }
+
                         echo_str = string.Format(Constant.echoTextMsg, msg_image.FromUserName, msg_image.ToUserName, msg_image.CreateTime,
-                                                       echo_content);
+                                                       sb.ToString());
 
                         break;
-                    case "event": 
+                    case "event":
                         switch (xml.SelectSingleNode("/xml/Event").InnerText)
                         {
                             case "subscribe":
@@ -179,7 +194,7 @@ namespace WeChatBot.Utilities
                             default:
                                 break;
                         }
-                        
+
                         break;
                     default:
                         break;
@@ -241,5 +256,46 @@ namespace WeChatBot.Utilities
                         "I think it's " + message;
         }
 
+        /// <summary>
+        /// Translate text from one language to another 
+        /// </summary>
+        /// <param name="authToken"></param>
+        /// <param name="text"></param>
+        /// <param name="from"></param>
+        /// <param name="to"></param>
+        private static string TranslateMethod(string authToken, string text, string to, string from="en")
+        {
+            //string text = "Use pixels to express measurements for padding and margins.";
+            //string from = "en";
+            //string to = "de";
+            string uri = "http://api.microsofttranslator.com/v2/Http.svc/Translate?text=" + HttpUtility.UrlEncode(text) + "&from=" + from + "&to=" + to;
+            HttpWebRequest httpWebRequest = (HttpWebRequest)WebRequest.Create(uri);
+            httpWebRequest.Headers.Add("Authorization", authToken);
+            WebResponse response = null;
+            try
+            {
+                response = httpWebRequest.GetResponse();
+                using (Stream stream = response.GetResponseStream())
+                {
+                    DataContractSerializer dcs = new DataContractSerializer(Type.GetType("System.String"));
+                    string translation = (string)dcs.ReadObject(stream);
+                    return translation;
+                }
+                
+            }
+            catch
+            {
+                throw;
+            }
+            finally
+            {
+                if (response != null)
+                {
+                    response.Close();
+                    response = null;
+                }
+            }
+
+        }
     }
 }
